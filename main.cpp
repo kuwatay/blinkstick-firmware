@@ -7,13 +7,6 @@
  * License: GNU GPL v2 (see License.txt), GNU GPL v3 or proprietary (CommercialLicense.txt)
  */
 
-#define LED_PORT_DDR        DDRB
-#define LED_PORT_OUTPUT     PORTB
-#define R_BIT            1
-#define G_BIT            0
-#define B_BIT            4
-
-
 #include <avr/io.h>
 #include <avr/wdt.h>
 #include <avr/eeprom.h>
@@ -60,6 +53,10 @@ const PROGMEM char usbHidReportDescriptor[USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] 
     0xb2, 0x02, 0x01,              //   FEATURE (Data,Var,Abs,Buf)
     0xc0                           // END_COLLECTION
 };
+
+// EEPROM BLOCK
+static uchar EEMEM cal;
+static char  EEMEM serialId [13] = "BS000001-1.4";
 
 static volatile uint8_t r = 0;
 static volatile uint8_t g = 0;
@@ -133,7 +130,7 @@ uchar usbFunctionWrite(uchar *data, uchar len)
 			led[2]=data[3];
 
 			cli(); //Disable interrupts
-			ws2812_sendarray_mask(&led[0], 3, _BV(PB1));
+			ws2812_sendarray_mask(&led[0], 3, _BV(ws2812_pin));
 			sei(); //Enable interrupts
 		}
 
@@ -192,7 +189,8 @@ static void SetSerial(void)
    serialNumberDescriptor[0] = USB_STRING_DESCRIPTOR_HEADER(SERIAL_NUMBER_LENGTH);
 
    uchar serialNumber[SERIAL_NUMBER_LENGTH];
-   eeprom_read_block(serialNumber, (uchar *)0 + 1, SERIAL_NUMBER_LENGTH);
+   // eeprom_read_block(serialNumber, (uchar *)0 + 1, SERIAL_NUMBER_LENGTH);
+   eeprom_read_block(serialNumber, &serialId, SERIAL_NUMBER_LENGTH);
 
    for (int i =0; i < SERIAL_NUMBER_LENGTH; i++)
    {
@@ -209,27 +207,6 @@ extern "C" usbMsgLen_t usbFunctionSetup(uchar data[8])
 	usbRequest_t    *rq = (usbRequest_t *)data;
 	reportId = rq->wValue.bytes[0];
 
-	/* this code is no longer needed
-    if((rq->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_VENDOR)
-	{
-		switch(rq->bRequest)
-		{
-		case CUSTOM_RQ_SET_RED:
-			r = 255 - rq->wValue.bytes[0];
-			OCR0B = r;
-			break;	
-		case CUSTOM_RQ_SET_GREEN:
-			g = 255 - rq->wValue.bytes[0];
-			OCR0A = g;
-			break;	
-		case CUSTOM_RQ_SET_BLUE:
-			b = 255 - rq->wValue.bytes[0];
-			OCR1B = b;
-			break;	
-		}
-    }
-	else 
-	*/
 	if((rq->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_CLASS){ /* HID class request */
         if(rq->bRequest == USBRQ_HID_GET_REPORT){ /* wValue: ReportType (highbyte), ReportID (lowbyte) */
 			 usbMsgPtr = replyBuffer;
@@ -331,36 +308,17 @@ extern "C" void usbEventResetReady(void)
     cli();  // usbMeasureFrameLength() counts CPU cycles, so disable interrupts.
     calibrateOscillator();
     sei();
-    eeprom_write_byte(0, OSCCAL);   // store the calibrated value in EEPROM
+    eeprom_write_byte(&cal, OSCCAL);   // store the calibrated value in EEPROM
 }
 
 /* ------------------------------------------------------------------------- */
-void pwmInit (void)
-{
-    /* PWM enable,  */
-    GTCCR |= _BV(PWM1B) | _BV(COM1B1);
-
-    TCCR0A |= _BV(WGM00) | _BV(WGM01) | _BV(COM0A1) | _BV(COM0B1);
-
-
-    /* Start timer 0 and 1 */
-    TCCR1 |= _BV (CS10);
-
-    TCCR0B |=  _BV(CS00);
-
-    /* Set PWM value to 0. */
-    OCR0A = 255;   // PB0
-    OCR0B = 255;   // PB1
-    OCR1B = 255;   // PB4
-} 
-
 int main(void)
 {
-	uchar   i;
+    uchar   i;
 
     wdt_enable(WDTO_1S);
 
-	SetSerial();
+    SetSerial();
     /* Even if you don't use the watchdog, turn it off here. On newer devices,
      * the status of the watchdog (on/off, period) is PRESERVED OVER RESET!
      */
@@ -378,21 +336,15 @@ int main(void)
     }
     usbDeviceConnect();
 	
-	DDRB |= _BV(PB1);
+    USB_DDRPORT(ws2812_port) |= _BV(ws2812_pin);
 	
-    //LED_PORT_DDR |= _BV(R_BIT);   /* make the LED bit an output */
-    //LED_PORT_DDR |= _BV(G_BIT);   /* make the LED bit an output */
-    //LED_PORT_DDR |= _BV(B_BIT);   /* make the LED bit an output */
-	//pwmInit();
-
-
-	uint8_t led[3];
+    uint8_t led[3];
 	
-	led[0]=32; led[1]=32; led[2]=32;
-	ws2812_sendarray_mask(&led[0], 3, _BV(PB1));
+    led[0]=32; led[1]=32; led[2]=32;
+    ws2812_sendarray_mask(&led[0], 3, _BV(ws2812_pin));
     _delay_ms(10);
-	led[0]=0; led[1]=0; led[2]=0;
-	ws2812_sendarray_mask(&led[0], 3, _BV(PB1));
+    led[0]=0; led[1]=0; led[2]=0;
+    ws2812_sendarray_mask(&led[0], 3, _BV(ws2812_pin));
 
     sei();
 
