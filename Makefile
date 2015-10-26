@@ -7,6 +7,9 @@
 # License: GNU GPL v2 (see License.txt), GNU GPL v3 or proprietary (CommercialLicense.txt)
 # This Revision: $Id: Makefile 692 2008-11-07 15:07:40Z cs $
 
+# SHELL=C:/Windows/System32/cmd.exe
+SHELL=/bin/sh
+
 #DEVICE  = attiny45
 DEVICE  = attiny85
 F_CPU   = 16500000
@@ -15,7 +18,7 @@ FUSE_H  = 0xdd
 AVRDUDE = avrdude -c usbtiny -P usb -p $(DEVICE) # edit this line for your programmer
 
 CFLAGS  = -Iusbdrv -I. -DDEBUG_LEVEL=0
-OBJECTS = usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o main.o
+OBJECTS = usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o light_ws2812.o main.o
 
 COMPILE = avr-gcc -Wall -Os -DF_CPU=$(F_CPU) $(CFLAGS) -mmcu=$(DEVICE)
 COMPILEPP = avr-g++ -Wall -Os -DF_CPU=$(F_CPU) $(CFLAGS) -mmcu=$(DEVICE)
@@ -33,7 +36,7 @@ help:
 	@echo "make clean ..... to delete objects and hex file"
 	@echo "make deploy .... program, increment serial, defaults"
 
-hex: main.hex
+hex: main.hex main.eep
 
 program: flash fuse
 
@@ -44,8 +47,8 @@ fuse:
 	$(AVRDUDE) -U hfuse:w:$(FUSE_H):m -U lfuse:w:$(FUSE_L):m
 
 # rule for uploading firmware:
-flash: main.hex
-	$(AVRDUDE) -U flash:w:main.hex:i
+flash: main.hex main.eep
+	$(AVRDUDE) -U flash:w:main.hex:i -U eeprom:w:main.eep
 
 dump: 
 	$(AVRDUDE) -U eeprom:r:blinkstick-eeprom.hex:i
@@ -54,12 +57,12 @@ dumpflash:
 	$(AVRDUDE) -U flash:r:blinkstick-flash.hex:i
 
 defaults: 
-	$(AVRDUDE) -U eeprom:w:eeprom.hex:i
+	$(AVRDUDE) -B 3 -U eeprom:w:eeprom.hex:i
 
 # rule for deleting dependent files (those which can be built by Make):
 clean:
-	rm -f main.hex main.lst main.obj main.cof main.list main.map main.eep.hex main.elf 
-	rm -f main.o usbdrv/oddebug.o usbdrv/usbdrv.o usbdrv/usbdrvasm.o main.s usbdrv/oddebug.s usbdrv/usbdrv.s
+	rm -f main.hex main.lst main.obj main.cof main.list main.map main.eep.hex main.elf  main.eep
+	rm -f main.o usbdrv/oddebug.o usbdrv/usbdrv.o usbdrv/usbdrvasm.o main.s usbdrv/oddebug.s usbdrv/usbdrv.s light_ws2812.o
 
 .cpp.o:
 	$(COMPILEPP) -c $< -o $@
@@ -93,7 +96,11 @@ main.elf: usbdrv $(OBJECTS)	# usbdrv dependency only needed because we copy it
 main.hex: main.elf
 	rm -f main.hex main.eep.hex
 	avr-objcopy -j .text -j .data -O ihex main.elf main.hex
-	avr-size main.hex
+	avr-size main.hex main.eep
+
+main.eep: main.elf
+	avr-objcopy -j .eeprom --set-section-flags=.eeprom="alloc,load" --change-section-lma .eeprom=0 -O ihex $< $@
+
 
 # debugging targets:
 
